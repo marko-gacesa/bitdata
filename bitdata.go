@@ -1,10 +1,11 @@
-// Copyright (c) 2025 by Marko Gaćeša
+// Copyright (c) 2025, 2026 by Marko Gaćeša
 
 package bitdata
 
 import (
 	"errors"
 	"io"
+	"unsafe"
 )
 
 type BitData []byte
@@ -23,151 +24,9 @@ func NewWriter() *Writer {
 	}
 }
 
-func (w *Writer) BitData() BitData {
-	return *w.data
-}
+func (w *Writer) BitData() BitData { return *w.data }
 
-func (w *Writer) WriteBool(v bool) {
-	if v {
-		write[byte](w, 1, 1)
-	} else {
-		write[byte](w, 0, 1)
-	}
-}
-
-func (w *Writer) Write8(v uint8, bitCount byte) {
-	write[uint8](w, v, bitCount)
-}
-
-func (w *Writer) Write16(v uint16, bitCount byte) {
-	write[uint16](w, v, bitCount)
-}
-
-func (w *Writer) Write32(v uint32, bitCount byte) {
-	write[uint32](w, v, bitCount)
-}
-
-func (w *Writer) Write64(v uint64, bitCount byte) {
-	write[uint64](w, v, bitCount)
-}
-
-type Reader struct {
-	data     BitData
-	bitsRead uint
-}
-
-func NewReader(data BitData) *Reader {
-	return &Reader{
-		data:     data,
-		bitsRead: 0,
-	}
-}
-
-func (r *Reader) Skip(bitCount uint) {
-	r.bitsRead += bitCount
-}
-
-func (r *Reader) ReadBool() (bool, error) {
-	v, err := read[byte](r, 1)
-	if err != nil {
-		return false, err
-	}
-
-	return v != 0, nil
-}
-
-func (r *Reader) Read8(bitCount byte) (uint8, error) {
-	if bitCount > 8 {
-		return 0, ErrBitCountTooBig
-	}
-	return read[uint8](r, bitCount)
-}
-
-func (r *Reader) Read16(bitCount byte) (uint16, error) {
-	if bitCount > 16 {
-		return 0, ErrBitCountTooBig
-	}
-	return read[uint16](r, bitCount)
-}
-
-func (r *Reader) Read32(bitCount byte) (uint32, error) {
-	if bitCount > 32 {
-		return 0, ErrBitCountTooBig
-	}
-	return read[uint32](r, bitCount)
-}
-
-func (r *Reader) Read64(bitCount byte) (uint64, error) {
-	if bitCount > 64 {
-		return 0, ErrBitCountTooBig
-	}
-	return read[uint64](r, bitCount)
-}
-
-type ReaderError struct {
-	reader Reader
-	err    error
-}
-
-func NewReaderError(data BitData) *ReaderError {
-	return &ReaderError{
-		reader: *NewReader(data),
-		err:    nil,
-	}
-}
-
-func (r *ReaderError) Error() error {
-	return r.err
-}
-
-func (r *ReaderError) Skip(bitCount uint) {
-	r.reader.Skip(bitCount)
-}
-
-func (r *ReaderError) ReadBool() (v bool) {
-	if r.err == nil {
-		v, r.err = r.reader.ReadBool()
-	}
-	return
-}
-
-func (r *ReaderError) Read8(bitCount byte) (v uint8) {
-	if r.err == nil {
-		v, r.err = r.reader.Read8(bitCount)
-	}
-	return
-}
-
-func (r *ReaderError) Read16(bitCount byte) (v uint16) {
-	if r.err == nil {
-		v, r.err = r.reader.Read16(bitCount)
-	}
-	return
-}
-
-func (r *ReaderError) Read32(bitCount byte) (v uint32) {
-	if r.err == nil {
-		v, r.err = r.reader.Read32(bitCount)
-	}
-	return
-}
-
-func (r *ReaderError) Read64(bitCount byte) (v uint64) {
-	if r.err == nil {
-		v, r.err = r.reader.Read64(bitCount)
-	}
-	return
-}
-
-type integer interface {
-	~int | ~int8 | ~int16 | ~int32 | ~int64 | ~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~uintptr
-}
-
-func mask[T integer](n byte) T {
-	return T(1)<<n - 1
-}
-
-func write[T integer](w *Writer, value T, bitCount byte) {
+func (w *Writer) Write[T integer](value T, bitCount byte) {
 	if bitCount == 0 {
 		return
 	}
@@ -194,12 +53,43 @@ func write[T integer](w *Writer, value T, bitCount byte) {
 	w.bitsWritten += uint(bitCount)
 }
 
-func read[T integer](r *Reader, bitCount byte) (T, error) {
+func (w *Writer) WriteBool(v bool) {
+	if v {
+		w.Write[byte](1, 1)
+	} else {
+		w.Write[byte](0, 1)
+	}
+}
+
+func (w *Writer) Write8(v uint8, bitCount byte)   { w.Write[uint8](v, bitCount) }
+func (w *Writer) Write16(v uint16, bitCount byte) { w.Write[uint16](v, bitCount) }
+func (w *Writer) Write32(v uint32, bitCount byte) { w.Write[uint32](v, bitCount) }
+func (w *Writer) Write64(v uint64, bitCount byte) { w.Write[uint64](v, bitCount) }
+
+type Reader struct {
+	data     BitData
+	bitsRead uint
+}
+
+func NewReader(data BitData) *Reader {
+	return &Reader{
+		data:     data,
+		bitsRead: 0,
+	}
+}
+
+func (r *Reader) Skip(bitCount uint) { r.bitsRead += bitCount }
+
+func (r *Reader) Read[T integer](bitCount byte) (T, error) {
 	if bitCount == 0 {
 		return 0, nil
 	}
 
 	var value T
+
+	if uintptr(bitCount) > unsafe.Sizeof(value)*8 {
+		return 0, ErrBitCountTooBig
+	}
 
 	idx := r.bitsRead / 8
 	ofs := r.bitsRead % 8
@@ -235,4 +125,88 @@ func read[T integer](r *Reader, bitCount byte) (T, error) {
 	r.bitsRead += uint(bitCount)
 
 	return value, nil
+}
+
+func (r *Reader) ReadBool() (bool, error) {
+	v, err := r.Read[byte](1)
+	if err != nil {
+		return false, err
+	}
+
+	return v != 0, nil
+}
+
+func (r *Reader) Read8(bitCount byte) (uint8, error)   { return r.Read[uint8](bitCount) }
+func (r *Reader) Read16(bitCount byte) (uint16, error) { return r.Read[uint16](bitCount) }
+func (r *Reader) Read32(bitCount byte) (uint32, error) { return r.Read[uint32](bitCount) }
+func (r *Reader) Read64(bitCount byte) (uint64, error) { return r.Read[uint64](bitCount) }
+
+type ReaderError struct {
+	reader Reader
+	err    error
+}
+
+func NewReaderError(data BitData) *ReaderError {
+	return &ReaderError{
+		reader: *NewReader(data),
+		err:    nil,
+	}
+}
+
+func (r *ReaderError) Error() error {
+	return r.err
+}
+
+func (r *ReaderError) Skip(bitCount uint) {
+	r.reader.Skip(bitCount)
+}
+
+func (r *ReaderError) Read[T integer](bitCount byte) (v T) {
+	if r.err == nil {
+		v, r.err = r.reader.Read[T](bitCount)
+	}
+	return
+}
+
+func (r *ReaderError) ReadBool() (v bool) {
+	if r.err == nil {
+		v, r.err = r.reader.ReadBool()
+	}
+	return
+}
+
+func (r *ReaderError) Read8(bitCount byte) (v uint8) {
+	if r.err == nil {
+		v, r.err = r.reader.Read[byte](bitCount)
+	}
+	return
+}
+
+func (r *ReaderError) Read16(bitCount byte) (v uint16) {
+	if r.err == nil {
+		v, r.err = r.reader.Read[uint16](bitCount)
+	}
+	return
+}
+
+func (r *ReaderError) Read32(bitCount byte) (v uint32) {
+	if r.err == nil {
+		v, r.err = r.reader.Read[uint32](bitCount)
+	}
+	return
+}
+
+func (r *ReaderError) Read64(bitCount byte) (v uint64) {
+	if r.err == nil {
+		v, r.err = r.reader.Read[uint64](bitCount)
+	}
+	return
+}
+
+type integer interface {
+	~int | ~int8 | ~int16 | ~int32 | ~int64 | ~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~uintptr
+}
+
+func mask[T integer](n byte) T {
+	return T(1)<<n - 1
 }
