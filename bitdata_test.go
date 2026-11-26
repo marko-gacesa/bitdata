@@ -1,8 +1,10 @@
-// Copyright (c) 2025 by Marko Gaćeša
+// Copyright (c) 2025, 2026 by Marko Gaćeša
 
 package bitdata
 
 import (
+	"bytes"
+	"encoding/binary"
 	"io"
 	"math/rand/v2"
 	"testing"
@@ -328,5 +330,25 @@ func TestReaderError(t *testing.T) {
 				t.Errorf("want %v, got %v", want, got)
 			}
 		})
+	}
+}
+
+func TestLittleEndianByteOrder(t *testing.T) {
+	const value = 0xDEADBEEF
+	w := NewWriter()
+	w.Write(value, 32)
+
+	print := func(name string, data []byte) {
+		t.Logf("%s\n  Hex: %X\n  Bin: %b\n", name, data, data)
+	}
+
+	bd := w.BitData()
+	le := binary.LittleEndian.AppendUint32(nil, value)
+
+	print("BitData", w.BitData())
+	print("LittleEndian", le)
+
+	if want, got := le, bd; bytes.Compare(bd, le) != 0 {
+		t.Errorf("byte order mismatch. want %v, got %v", want, got)
 	}
 }

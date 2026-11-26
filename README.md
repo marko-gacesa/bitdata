@@ -1,6 +1,6 @@
 # BitData
 
-BitData is a simple library for packing and unpacking bit-level data to and from byte slices.
+BitData is a simple library for packing and unpacking bit-level data to and from byte slices. It stores multi-byte values in little-endian order.
 
 Writing data:
 
@@ -33,4 +33,3 @@ There are two readers: `Reader` and `ReaderError`. The `Reader`'s methods return
 
 	fmt.Println(day, month, year) // Prints: 29 6 2025
 ```
-
